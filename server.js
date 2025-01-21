@@ -54,6 +54,13 @@ app.put('/shelves/:id', async (req, res) => {
     const { id } = req.params;
     const { x, z } = req.body;
     const collection = db.collection('shelves');
+
+    // Check for duplicate coordinates
+    const existingShelf = await collection.findOne({ x, z });
+    if (existingShelf) {
+        return res.status(400).json({ error: 'Duplicate coordinates are not allowed' });
+    }
+
     await collection.updateOne({ _id: new ObjectId(id) }, { $set: { x, z } });
     res.status(200).send();
 });
