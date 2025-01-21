@@ -65,6 +65,36 @@ app.put('/shelves/:id', async (req, res) => {
     res.status(200).send();
 });
 
+// Add new shelf
+app.post('/shelves', async (req, res) => {
+    const { x, z } = req.body;
+    const collection = db.collection('shelves');
+
+    // Check for duplicate coordinates
+    const existingShelf = await collection.findOne({ x, z });
+    if (existingShelf) {
+        return res.status(400).json({ error: 'Duplicate coordinates are not allowed' });
+    }
+
+    await collection.insertOne({ x, z });
+    res.status(201).send();
+});
+
+app.delete('/shelves/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await db.collection('shelves').deleteOne({ _id: new ObjectId(id) });
+        if (result.deletedCount === 1) {
+            res.status(200).send({ message: 'Shelf deleted successfully' });
+        } else {
+            res.status(404).send({ message: 'Shelf not found' });
+        }
+    } catch (error) {
+        res.status(500).send({ message: 'Error deleting shelf', error });
+    }
+});
+
+
 app.listen(PORT, async () => {
     await connect();
     await initializeShelves();

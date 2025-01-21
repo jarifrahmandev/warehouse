@@ -28,10 +28,95 @@
             transform: translate(-50%, -50%);
             white-space: nowrap;
         }
+        .popup-form {
+        display: none;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: #f9f9f9;
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        z-index: 1000;
+        width: 300px;
+        max-width: 90%;
+    }
+    .popup-form.active {
+        display: block;
+    }
+    .popup-form h2 {
+        margin-top: 0;
+        font-size: 24px;
+        color: #333;
+    }
+    .popup-form label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: bold;
+        color: #555;
+    }
+    .popup-form input {
+        width: 100%;
+        padding: 10px;
+        margin-bottom: 20px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        box-sizing: border-box;
+    }
+    .popup-form button {
+        width: 100%;
+        padding: 10px;
+        background-color: #007bff;
+        border: none;
+        border-radius: 4px;
+        color: white;
+        font-size: 16px;
+        cursor: pointer;
+    }
+    .popup-form button:hover {
+        background-color: #0056b3;
+    }
+    .overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 999;
+    }
+    .overlay.active {
+        display: block;
+    }
+    body { margin: 0; }
+        canvas { display: block; }
+        .tooltip {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 5px;
+            border-radius: 5px;
+            display: none;
+        }
         
     </style>
 </head>
 <body>
+    <button id="addShelfButton">Add Shelf</button>
+
+    <div class="overlay" id="overlay"></div>
+
+    <div class="popup-form" id="popupForm">
+        <h2>Add Shelf</h2>
+        <form id="shelfForm">
+            <label for="x">X Coordinate:</label>
+            <input type="number" id="x" name="x" required>
+            <label for="z">Z Coordinate:</label>
+            <input type="number" id="z" name="z" required>
+            <button type="submit">Add Shelf</button>
+        </form>
     <script type="module">
         // Import Three.js and OrbitControls from jsDelivr
         import * as THREE from 'three';
@@ -116,6 +201,11 @@
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
 
+             // New code to create and style the tooltip
+        const tooltip = document.createElement('div');
+        tooltip.className = 'tooltip';
+        document.body.appendChild(tooltip);
+
         function onMouseMove(event) {
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
@@ -126,9 +216,15 @@
             if (intersects.length > 0) {
                 document.body.style.cursor = 'pointer';
                 selectedShelf = intersects[0].object.parent;
+                const { x, z } = selectedShelf.position;
+                tooltip.style.left = `${event.clientX + 10}px`;
+                tooltip.style.top = `${event.clientY + 10}px`;
+                tooltip.style.display = 'block';
+                tooltip.innerHTML = `x: ${x}, z: ${z}`;
             } else {
                 document.body.style.cursor = 'default';
                 selectedShelf = null;
+                tooltip.style.display = 'none';
             }
         }
 
@@ -150,6 +246,47 @@
                 }
             }
         }
+
+        const addShelfButton = document.getElementById('addShelfButton');
+        const popupForm = document.getElementById('popupForm');
+        const overlay = document.getElementById('overlay');
+        const shelfForm = document.getElementById('shelfForm');
+
+        addShelfButton.addEventListener('click', () => {
+            popupForm.classList.add('active');
+            overlay.classList.add('active');
+        });
+
+        overlay.addEventListener('click', () => {
+            popupForm.classList.remove('active');
+            overlay.classList.remove('active');
+        });
+
+        shelfForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const formData = new FormData(shelfForm);
+            const data = Object.fromEntries(formData.entries());
+
+            const response = await fetch('/shelves', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                alert('Shelf added successfully');
+                popupForm.classList.remove('active');
+                overlay.classList.remove('active');
+                  // New code to add the shelf to the scene
+                  const shelf = createShelf(data.x, data.z);
+                scene.add(shelf);
+                location.reload();
+            } else {
+                alert('Failed to add shelf');
+            }
+        });
 
         window.addEventListener('mousemove', onMouseMove);
         window.addEventListener('mousedown', onMouseDown);
