@@ -17,6 +17,12 @@
             margin: 0;
             overflow: hidden;
         }
+        .coordinate-label {
+            position: absolute;
+            color: #000;
+            font-size: 12px;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -25,7 +31,6 @@
         import * as THREE from 'three';
         import { OrbitControls } from 'OrbitControls';
 
-        // Scene, Camera, Renderer
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0xeeeeee);
 
@@ -36,14 +41,12 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        // OrbitControls: Attach to camera and renderer's DOM element
         const controls = new OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true; // Adds a smooth damping effect
+        controls.enableDamping = true;
         controls.dampingFactor = 0.05;
-        controls.screenSpacePanning = false; // Disable panning up/down in screen space
-        controls.maxPolarAngle = Math.PI / 2; // Prevent camera from flipping below ground
+        controls.screenSpacePanning = false;
+        controls.maxPolarAngle = Math.PI / 2;
 
-        // Lighting
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
         scene.add(ambientLight);
 
@@ -51,19 +54,22 @@
         directionalLight.position.set(10, 50, 30);
         scene.add(directionalLight);
 
-        // Floor
         const floorGeometry = new THREE.PlaneGeometry(200, 200);
         const floorMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc });
         const floor = new THREE.Mesh(floorGeometry, floorMaterial);
         floor.rotation.x = -Math.PI / 2;
         scene.add(floor);
 
-        // Create shelves
+        // Add grid helper
+        const gridHelper = new THREE.GridHelper(200, 20);
+        scene.add(gridHelper);
+
         const shelfGroup = new THREE.Group();
+        scene.add(shelfGroup);
+
         function createShelf(x, z) {
             const shelf = new THREE.Group();
 
-            // Frame
             const frameMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
             const frameGeometry = new THREE.BoxGeometry(1, 10, 1);
 
@@ -75,7 +81,6 @@
                 }
             }
 
-            // Shelves
             const shelfMaterial = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
             const shelfGeometry = new THREE.BoxGeometry(20, 0.5, 10);
 
@@ -89,13 +94,18 @@
             return shelf;
         }
 
-        shelfGroup.add(createShelf(-50, 0));
-        shelfGroup.add(createShelf(50, 0));
-        shelfGroup.add(createShelf(0, 50));
-        shelfGroup.add(createShelf(0, -50));
-        scene.add(shelfGroup);
+        async function loadShelves() {
+            const response = await fetch('/shelves');
+            const shelves = await response.json();
+            shelves.forEach(shelf => {
+                const shelfMesh = createShelf(shelf.x, shelf.z);
+                shelfMesh.userData.id = shelf._id;
+                shelfGroup.add(shelfMesh);
+            });
+        }
 
-        // Movable Shelves
+        loadShelves();
+
         let selectedShelf = null;
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
@@ -109,19 +119,28 @@
 
             if (intersects.length > 0) {
                 document.body.style.cursor = 'pointer';
-                selectedShelf = intersects[0].object.parent; // Select the entire shelf group
+                selectedShelf = intersects[0].object.parent;
             } else {
                 document.body.style.cursor = 'default';
                 selectedShelf = null;
             }
         }
 
-        function onMouseDown(event) {
+        async function onMouseDown(event) {
             if (selectedShelf) {
                 const newPosition = prompt('Enter new position (x,z) separated by a comma:', '0,0');
                 if (newPosition) {
                     const [newX, newZ] = newPosition.split(',').map(Number);
                     selectedShelf.position.set(newX, 0, newZ);
+
+                    const id = selectedShelf.userData.id;
+                    await fetch(`/shelves/${id}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ x: newX, z: newZ })
+                    });
                 }
             }
         }
@@ -129,21 +148,64 @@
         window.addEventListener('mousemove', onMouseMove);
         window.addEventListener('mousedown', onMouseDown);
 
-        // Resize handler
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        // Animation loop
         function animate() {
             requestAnimationFrame(animate);
-            controls.update(); // Ensure controls update on each frame
+            controls.update();
             renderer.render(scene, camera);
+            updateCoordinateLabels();
         }
 
         animate();
+
+        // Add coordinate labels on the side of the floor
+        function createCoordinateLabel(x, z) {
+            const div = document.createElement('div');
+        div.className = 'coordinate-label';
+        div.textContent = x !== null ? `(${x})` : `(${z})`;
+        document.body.appendChild(div);
+        return div;
+        }
+
+        function updateCoordinateLabels() {
+            const labels = document.querySelectorAll('.coordinate-label');
+            labels.forEach(label => label.remove());
+
+        // Show x coordinates on one side of the floor
+        for (let i = -100; i <= 100; i += 10) {
+            const labelX = createCoordinateLabel(i, null);
+            const vectorX = new THREE.Vector3(i, 0, -100);
+            vectorX.project(camera);
+
+            const xX = (vectorX.x * 0.5 + 0.5) * window.innerWidth;
+            const yX = (vectorX.y * -0.5 + 0.5) * window.innerHeight;
+            labelX.style.left = `${xX}px`;
+            labelX.style.top = `${yX}px`;
+        }
+
+        // Show z coordinates on the other side of the floor
+        for (let i = -100; i <= 100; i += 10) {
+            const labelZ = createCoordinateLabel(null, i);
+            const vectorZ = new THREE.Vector3(-100, 0, i);
+            vectorZ.project(camera);
+
+            const xZ = (vectorZ.x * 0.5 + 0.5) * window.innerWidth;
+            const yZ = (vectorZ.y * -0.5 + 0.5) * window.innerHeight;
+            labelZ.style.left = `${xZ}px`;
+            labelZ.style.top = `${yZ}px`;
+        }
+        }
+
+        window.addEventListener('resize', updateCoordinateLabels);
+        window.addEventListener('mousemove', updateCoordinateLabels);
+        window.addEventListener('mousedown', updateCoordinateLabels);
+
+        updateCoordinateLabels();
     </script>
 </body>
 </html>
