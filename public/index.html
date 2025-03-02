@@ -25,100 +25,14 @@
             font-size: 14px;
             color: #fff;
             pointer-events: none;
-            transform: translate(-50%, -50%);
             white-space: nowrap;
-        }
-        .popup-form {
-        display: none;
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background-color: #f9f9f9;
-        padding: 30px;
-        border-radius: 8px;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        z-index: 1000;
-        width: 300px;
-        max-width: 90%;
-    }
-    .popup-form.active {
-        display: block;
-    }
-    .popup-form h2 {
-        margin-top: 0;
-        font-size: 24px;
-        color: #333;
-    }
-    .popup-form label {
-        display: block;
-        margin-bottom: 8px;
-        font-weight: bold;
-        color: #555;
-    }
-    .popup-form input {
-        width: 100%;
-        padding: 10px;
-        margin-bottom: 20px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        box-sizing: border-box;
-    }
-    .popup-form button {
-        width: 100%;
-        padding: 10px;
-        background-color: #007bff;
-        border: none;
-        border-radius: 4px;
-        color: white;
-        font-size: 16px;
-        cursor: pointer;
-    }
-    .popup-form button:hover {
-        background-color: #0056b3;
-    }
-    .overlay {
-        display: none;
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(0, 0, 0, 0.5);
-        z-index: 999;
-    }
-    .overlay.active {
-        display: block;
-    }
-    body { margin: 0; }
-        canvas { display: block; }
-        .tooltip {
-            position: absolute;
-            background-color: rgba(0, 0, 0, 0.7);
-            color: #fff;
-            padding: 5px;
-            border-radius: 5px;
             display: none;
         }
-        
     </style>
 </head>
 <body>
-    <button id="addShelfButton">Add Shelf</button>
-
-    <div class="overlay" id="overlay"></div>
-
-    <div class="popup-form" id="popupForm">
-        <h2>Add Shelf</h2>
-        <form id="shelfForm">
-            <label for="x">X Coordinate:</label>
-            <input type="number" id="x" name="x" required>
-            <label for="z">Z Coordinate:</label>
-            <input type="number" id="z" name="z" required>
-            <button type="submit">Add Shelf</button>
-        </form>
+    <div id="coordinateDisplay" class="coordinate-label"></div>
     <script type="module">
-        // Import Three.js and OrbitControls from jsDelivr
         import * as THREE from 'three';
         import { OrbitControls } from 'OrbitControls';
 
@@ -134,9 +48,6 @@
 
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
-        controls.dampingFactor = 0.05;
-        controls.screenSpacePanning = false;
-        controls.maxPolarAngle = Math.PI / 2;
 
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
         scene.add(ambientLight);
@@ -151,16 +62,24 @@
         floor.rotation.x = -Math.PI / 2;
         scene.add(floor);
 
-        // Add grid helper
         const gridHelper = new THREE.GridHelper(200, 20);
         scene.add(gridHelper);
 
         const shelfGroup = new THREE.Group();
         scene.add(shelfGroup);
 
+        async function loadShelves() {
+            try {
+                const response = await fetch('/shelves');
+                const shelves = await response.json();
+                shelves.forEach(shelf => createShelf(shelf.x, shelf.z));
+            } catch (error) {
+                console.error('Error fetching shelves:', error);
+            }
+        }
+
         function createShelf(x, z) {
             const shelf = new THREE.Group();
-
             const frameMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
             const frameGeometry = new THREE.BoxGeometry(1, 10, 1);
 
@@ -182,173 +101,86 @@
             }
 
             shelf.position.set(x, 0, z);
-            return shelf;
-        }
-
-        async function loadShelves() {
-            const response = await fetch('/shelves');
-            const shelves = await response.json();
-            shelves.forEach(shelf => {
-                const shelfMesh = createShelf(shelf.x, shelf.z);
-                shelfMesh.userData.id = shelf._id;
-                shelfGroup.add(shelfMesh);
-            });
+            shelfGroup.add(shelf);
         }
 
         loadShelves();
 
-        let selectedShelf = null;
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
+        const coordinateDisplay = document.getElementById("coordinateDisplay");
+        let selectedShelf = null;
 
-             // New code to create and style the tooltip
-        const tooltip = document.createElement('div');
-        tooltip.className = 'tooltip';
-        document.body.appendChild(tooltip);
+        function roundToTwoDigits(value) {
+            return Math.round(value / 10) * 10;
+        }
 
-        function onMouseMove(event) {
+        window.addEventListener('dblclick', (event) => {
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
             raycaster.setFromCamera(mouse, camera);
             const intersects = raycaster.intersectObjects(shelfGroup.children, true);
 
             if (intersects.length > 0) {
-                document.body.style.cursor = 'pointer';
                 selectedShelf = intersects[0].object.parent;
-                const { x, z } = selectedShelf.position;
-                tooltip.style.left = `${event.clientX + 10}px`;
-                tooltip.style.top = `${event.clientY + 10}px`;
-                tooltip.style.display = 'block';
-                tooltip.innerHTML = `x: ${x}, z: ${z}`;
-            } else {
-                document.body.style.cursor = 'default';
-                selectedShelf = null;
-                tooltip.style.display = 'none';
             }
-        }
+        });
 
-        async function onMouseDown(event) {
+        window.addEventListener('click', async (event) => {
             if (selectedShelf) {
-                const newPosition = prompt('Enter new position (x,z) separated by a comma:', '0,0');
-                if (newPosition) {
-                    const [newX, newZ] = newPosition.split(',').map(Number);
-                    selectedShelf.position.set(newX, 0, newZ);
+                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObject(floor);
 
-                    const id = selectedShelf.userData.id;
-                    await fetch(`/shelves/${id}`, {
-                        method: 'PUT',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ x: newX, z: newZ })
-                    });
+                if (intersects.length > 0) {
+                    let newPosition = intersects[0].point;
+                    newPosition.x = roundToTwoDigits(newPosition.x);
+                    newPosition.z = roundToTwoDigits(newPosition.z);
+                    const oldPosition = {
+                        x: selectedShelf.position.x,
+                        z: selectedShelf.position.z
+                    };
+                    selectedShelf.position.set(newPosition.x, 0, newPosition.z);
+                    
+                    if (confirm(`Do you want to save the new coordinates? X: ${newPosition.x}, Z: ${newPosition.z}`)) {
+                        try {
+                            const response = await fetch('/shelves', {
+                                method: 'PUT',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    currentX: oldPosition.x,
+                                    currentZ: oldPosition.z,
+                                    newX: newPosition.x,
+                                    newZ: newPosition.z
+                                })
+                            });
+
+                            if (!response.ok) {
+                                const errorData = await response.json();
+                                alert(`Error: ${errorData.error}`);
+                                selectedShelf.position.set(oldPosition.x, 0, oldPosition.z); // Revert to old position
+                            }
+                        } catch (error) {
+                            alert('Failed to update shelf coordinates');
+                            selectedShelf.position.set(oldPosition.x, 0, oldPosition.z); // Revert to old position
+                        }
+                    }
+                    
+                    selectedShelf = null;
                 }
             }
-        }
-
-        const addShelfButton = document.getElementById('addShelfButton');
-        const popupForm = document.getElementById('popupForm');
-        const overlay = document.getElementById('overlay');
-        const shelfForm = document.getElementById('shelfForm');
-
-        addShelfButton.addEventListener('click', () => {
-            popupForm.classList.add('active');
-            overlay.classList.add('active');
-        });
-
-        overlay.addEventListener('click', () => {
-            popupForm.classList.remove('active');
-            overlay.classList.remove('active');
-        });
-
-        shelfForm.addEventListener('submit', async (event) => {
-            event.preventDefault();
-            const formData = new FormData(shelfForm);
-            const data = Object.fromEntries(formData.entries());
-
-            const response = await fetch('/shelves', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(data)
-            });
-
-            if (response.ok) {
-                alert('Shelf added successfully');
-                popupForm.classList.remove('active');
-                overlay.classList.remove('active');
-                  // New code to add the shelf to the scene
-                  const shelf = createShelf(data.x, data.z);
-                scene.add(shelf);
-                location.reload();
-            } else {
-                alert('Failed to add shelf');
-            }
-        });
-
-        window.addEventListener('mousemove', onMouseMove);
-        window.addEventListener('mousedown', onMouseDown);
-
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
             renderer.render(scene, camera);
-            updateCoordinateLabels();
         }
 
         animate();
-
-        // Add coordinate labels on the side of the floor
-        function createCoordinateLabel(x, z) {
-            const div = document.createElement('div');
-        div.className = 'coordinate-label';
-        div.textContent = x !== null ? `${x}` : `${z}`;
-        document.body.appendChild(div);
-        return div;
-        }
-
-        function updateCoordinateLabels() {
-            const labels = document.querySelectorAll('.coordinate-label');
-            labels.forEach(label => label.remove());
-
-        // Show x coordinates on one side of the floor
-        for (let i = -100; i <= 100; i += 10) {
-            const labelX = createCoordinateLabel(i, null);
-            const vectorX = new THREE.Vector3(i, 0, -100);
-            vectorX.project(camera);
-
-            const xX = (vectorX.x * 0.5 + 0.5) * window.innerWidth;
-            const yX = (vectorX.y * -0.5 + 0.5) * window.innerHeight;
-            labelX.style.left = `${xX}px`;
-            labelX.style.top = `${yX}px`;
-        }
-
-        // Show z coordinates on the other side of the floor
-        for (let i = -100; i <= 100; i += 10) {
-            const labelZ = createCoordinateLabel(null, i);
-            const vectorZ = new THREE.Vector3(-100, 0, i);
-            vectorZ.project(camera);
-
-            const xZ = (vectorZ.x * 0.5 + 0.5) * window.innerWidth;
-            const yZ = (vectorZ.y * -0.5 + 0.5) * window.innerHeight;
-            labelZ.style.left = `${xZ}px`;
-            labelZ.style.top = `${yZ}px`;
-        }
-        }
-
-        window.addEventListener('resize', updateCoordinateLabels);
-        window.addEventListener('mousemove', updateCoordinateLabels);
-        window.addEventListener('mousedown', updateCoordinateLabels);
-
-        updateCoordinateLabels();
     </script>
 </body>
 </html>

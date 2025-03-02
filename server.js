@@ -50,18 +50,26 @@ app.get('/shelves', async (req, res) => {
 });
 
 // Update shelf position
-app.put('/shelves/:id', async (req, res) => {
-    const { id } = req.params;
-    const { x, z } = req.body;
+app.put('/shelves', async (req, res) => {
+    const { currentX, currentZ, newX, newZ } = req.body;
     const collection = db.collection('shelves');
 
     // Check for duplicate coordinates
-    const existingShelf = await collection.findOne({ x, z });
+    const existingShelf = await collection.findOne({ x: newX, z: newZ });
     if (existingShelf) {
         return res.status(400).json({ error: 'Duplicate coordinates are not allowed' });
     }
 
-    await collection.updateOne({ _id: new ObjectId(id) }, { $set: { x, z } });
+    // Find and update the shelf by current coordinates
+    const result = await collection.updateOne(
+        { x: currentX, z: currentZ },
+        { $set: { x: newX, z: newZ } }
+    );
+
+    if (result.matchedCount === 0) {
+        return res.status(404).json({ error: 'Shelf not found' });
+    }
+
     res.status(200).send();
 });
 
